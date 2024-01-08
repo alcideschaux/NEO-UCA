@@ -1,11 +1,15 @@
 import pandas as pd
+import numpy as np
 
 # Load data
-df = pd.read_csv('Data/NEO-UCA-DATA.csv', sep=';')
+df = pd.read_csv('Data/NEO-UCA-DATA.csv')
 
 """
 Data wrangling
 """
+# Recode sex
+df['sex'] = df['sex'].replace({'M':'Male','m':'Male','F':'Female'})
+
 # Recode dichotomous variables
 df['variant_histology'] = pd.Categorical(df['variant_histology'], categories=['No','Yes'], ordered=True)
 df['recurrence'] = pd.Categorical(df['recurrence'], categories=['No','Yes'], ordered=True)
@@ -45,3 +49,10 @@ df['ypN_group1'] = pd.Categorical(df['ypN_group1'], categories=['pN0','pN1-pN2-p
 df['ypN_group2'] = df['ypN_stage']
 df['ypN_group2'] = df['ypN_group2'].replace(['pN2','pN3'], 'pN2-pN3')
 df['ypN_group2'] = pd.Categorical(df['ypN_group2'], categories=['pN0','pN1','pN2-pN3'], ordered=True)
+
+# Create dre
+# Disease-related event:
+# 'No', patients who died from other causes (unrelated to cancer) and didn't have tumor recurrence
+# 'Yes', otherwise (patients with tumor recurrence, either who were alive or not, and patients who died from cancer, either with or without tumor recurrence)
+df['dre'] = np.where((df['doc'] == 'No') & (df['recurrence'] == 'No'), 'No', 'Yes')
+df['dre'] = pd.Categorical(df['dre'], categories=['No','Yes'], ordered=True)
