@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 # Load data
-df = pd.read_csv('NEO-UCA-DATA.csv')
+df = pd.read_csv('Data/NEO-UCA-DATA.csv')
 
 """
 Data wrangling
@@ -21,7 +21,7 @@ df['doc'] = df['doc'].replace({0:'No', 1:'Yes'})
 df['doc'] = pd.Categorical(df['doc'], categories=['No','Yes'], ordered=True)
 
 # Recode ypT_stage column
-df['ypT_stage'] = df['ypT_stage'].replace({'0':'pT0','is':'pTis','a':'pTa','2':'pT2','3':'pT3'}) # Recode to pT
+df['ypT_stage'] = df['ypT_stage'].replace({'0':'pT0','is':'pTis','a':'pTa','2':'pT2'}) # Recode to pT
 df['ypT_stage'] = df['ypT_stage'].replace(['2a','2b'], 'pT2') # Merge 2a and 2b to pT2
 df['ypT_stage'] = df['ypT_stage'].replace(['3a','3b'], 'pT3') # Merge 3a and 3b to pT3
 df['ypT_stage'] = pd.Categorical(df['ypT_stage'], categories=['pT0','pTis','pTa','pT2','pT3'], ordered=True) # Order the categories
@@ -56,6 +56,3 @@ df['ypN_group2'] = pd.Categorical(df['ypN_group2'], categories=['pN0','pN1','pN2
 # 'Yes', otherwise (patients with tumor recurrence, either who were alive or not, and patients who died from cancer, either with or without tumor recurrence)
 df['dre'] = np.where((df['doc'] == 'No') & (df['recurrence'] == 'No'), 'No', 'Yes')
 df['dre'] = pd.Categorical(df['dre'], categories=['No','Yes'], ordered=True)
-
-# Remove outlier with follow-up time of 721 months
-df = df[df['fu_censor'] != 721]
