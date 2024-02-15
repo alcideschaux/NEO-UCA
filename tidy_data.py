@@ -57,5 +57,6 @@ df['ypN_group2'] = pd.Categorical(df['ypN_group2'], categories=['pN0','pN1','pN2
 df['dre'] = np.where((df['doc'] == 'No') & (df['recurrence'] == 'No'), 'No', 'Yes')
 df['dre'] = pd.Categorical(df['dre'], categories=['No','Yes'], ordered=True)
 
-# Remove outlier with follow-up time of 721 months
-df = df[df['fu_censor'] != 721]
+# Replace follow-up values of days to months (ID-008)
+df['fu_recurrence'] = df['fu_recurrence'].replace(232, 232/30)
+df['fu_censor'] = df['fu_censor'].replace(721, 721/30)
