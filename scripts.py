@@ -1,11 +1,13 @@
-import statsmodels.api as sm
 import numpy as np
 import pandas as pd
 import lifelines
 from lifelines import KaplanMeierFitter
 from lifelines.statistics import multivariate_logrank_test
+from lifelines import CoxPHFitter
 from scipy.stats import chi2_contingency, pointbiserialr
 import matplotlib.pyplot as plt
+import statsmodels.api as sm
+from statsmodels.formula.api import logit
 
 # Cramer's V
 # x, y: Categorical columns
@@ -47,42 +49,178 @@ def rank_biserial_correlation(x, y):
     correlation = round(correlation, 2)
     return correlation
 
-def logistic_regression(data, X, y):
-    # Define the dependent variable
-    y = data[y]
+def logistic_analysis(data, outcome, predictors, print_full_summary=True):
+    """
+    Perform logistic regression analysis for specified outcome and predictors
+    
+    Parameters:
+    -----------
+    data : pandas DataFrame
+        The dataset containing all variables
+    outcome : str
+        Name of the outcome variable (must be binary)
+    predictors : list
+        List of predictor variables
+    print_full_summary : bool, optional
+        Whether to print the full regression summary (default False)
+    
+    Returns:
+    --------
+    DataFrame with odds ratios, CIs, and p-values
+    """
 
-    # Define the independent variable (don't forget to add a constant)
-    X = sm.add_constant(data[X])
-
-    # Create the logistic regression model
-    logreg = sm.Logit(y, X)
-
-    # Fit the model to the data
-    result = logreg.fit()
-
-    # Obtain the odds ratio, confidence interval, and p-values
-    odds_ratios = np.exp(result.params)  # Exponentiate the model coefficients
-    conf_int = np.exp(result.conf_int())  # Exponentiate the confidence intervals
-    p_values = result.pvalues  # Get the p-values
-
-    # Create a DataFrame to display the results
-    odds_ratios = pd.DataFrame({
+    # Convert outcome to binary if it's 'Yes/No'
+    if data[outcome].dtype == 'object':
+        data[outcome] = (data[outcome] == 'Yes').astype(int)
+    
+    # Prepare predictors for formula
+    formula_predictors = []
+    for pred in predictors:
+        # Check if variable is categorical
+        if data[pred].dtype == 'object' or data[pred].dtype.name == 'category':
+            formula_predictors.append(f"C({pred})")
+            data[pred] = data[pred].astype('category')
+        else:
+            formula_predictors.append(pred)
+            data[pred] = data[pred].astype(float)
+    
+    # Create formula
+    formula = f"{outcome} ~ " + " + ".join(formula_predictors)
+    
+    # Fit model
+    model = logit(formula, data=data).fit()
+    
+    # Calculate odds ratios and CIs
+    odds_ratios = np.exp(model.params)
+    conf_ints = np.exp(model.conf_int())
+    p_values = model.pvalues
+    
+    # Create results dataframe
+    results = pd.DataFrame({
         'Odds Ratio': odds_ratios,
-        'Lower CI': conf_int[0],
-        'Upper CI': conf_int[1],
+        'CI Lower': conf_ints[0],
+        'CI Upper': conf_ints[1],
         'P-value': p_values
-    }).iloc[1:]
+    })
+    
+    # Print results
+    print(f"\nLogistic Regression Analysis for {outcome}")
+    print("-" * 50)
+    for index, row in results.iterrows():
+        print(f"{index}:")
+        print(f"OR: {row['Odds Ratio']:.3f}, 95% CI: ({row['CI Lower']:.3f}, {row['CI Upper']:.3f}), P={row['P-value']:.3f}")
+        print()
+    
+    if print_full_summary:
+        print("\nFull Model Summary:")
+        print(model.summary())
+        print("\nModel Fit Statistics:")
+        print(f"AIC: {model.aic:.2f}")
+        print(f"BIC: {model.bic:.2f}")
+        print(f"Pseudo R-squared: {model.prsquared:.3f}")
+    
+    return results
 
-    return odds_ratios
+# Example usage:
 
-def cox_regression(data, duration, formula, event):
-    # Fit the Cox proportional hazards model
-    cph = lifelines.CoxPHFitter()
-    cph.fit(data, duration_col=duration, event_col=event, formula=formula)
+# For univariate analysis
+# logistic_analysis(data, 'recurrence', ['age'])
+# logistic_analysis(data, 'recurrence', ['sex'])
+# logistic_analysis(data, 'recurrence', ['variant_histology'])
 
-    renamed_summary = cph.summary.rename(columns={'exp(coef)': 'Hazards Ratio', 'p': 'P-value', 'exp(coef) lower 95%': 'Lower CI', 'exp(coef) upper 95%': 'Upper CI'})
+# For multivariate analysis
+# logistic_analysis(data, 'recurrence', ['age', 'sex', 'variant_histology', 'ypT_group'])
 
-    return renamed_summary[['Hazards Ratio','Lower CI','Upper CI','P-value']]
+# For other outcomes
+# logistic_analysis(data, 'dod', ['age', 'sex', 'variant_histology', 'ypT_group'])
+# logistic_analysis(data, 'dre', ['age', 'sex', 'variant_histology', 'ypT_group'])
+
+def cox_analysis(data, time_var, event_var, predictors, print_full_summary=False):
+    """
+    Perform Cox proportional hazards analysis
+    """
+    import warnings
+    warnings.filterwarnings('ignore')
+    
+    import pandas as pd
+    import numpy as np
+    from lifelines import CoxPHFitter
+    
+    # Create copy of data with only necessary columns
+    df = data[[time_var, event_var] + predictors].copy()
+    
+    # Convert event to binary if it's 'Yes/No'
+    if df[event_var].dtype == 'object':
+        df[event_var] = (df[event_var] == 'Yes').astype(int)
+    
+    # Handle categorical variables with dummy coding
+    for pred in predictors:
+        if df[pred].dtype == 'object' or df[pred].dtype.name == 'category':
+            # Create dummy variables, drop_first=True for reference category
+            dummies = pd.get_dummies(df[pred], prefix=pred, drop_first=True)
+            # Add dummy columns to dataframe
+            df = pd.concat([df, dummies], axis=1)
+            # Drop original categorical column
+            df = df.drop(columns=[pred])
+    
+    # Initialize and fit Cox model
+    cph = CoxPHFitter()
+    cph.fit(df, duration_col=time_var, event_col=event_var)
+    
+    # Get summary as DataFrame
+    summary_df = cph.summary
+    
+    # Extract results
+    results = pd.DataFrame({
+        'Hazard Ratio': summary_df['exp(coef)'],
+        'CI Lower': summary_df['exp(coef) lower 95%'],
+        'CI Upper': summary_df['exp(coef) upper 95%'],
+        'P-value': summary_df['p']
+    })
+    
+    # Print results
+    print(f"\nCox Proportional Hazards Analysis")
+    print(f"Time variable: {time_var}")
+    print(f"Event variable: {event_var}")
+    print("-" * 50)
+    
+    for index, row in results.iterrows():
+        print(f"{index}:")
+        print(f"HR: {row['Hazard Ratio']:.3f}, 95% CI: ({row['CI Lower']:.3f}, {row['CI Upper']:.3f}), P={row['P-value']:.3f}")
+        print()
+    
+    if print_full_summary:
+        print("\nFull Model Summary:")
+        print(cph.print_summary())
+        
+        # Print model fit statistics
+        print("\nModel Fit Statistics:")
+        print(f"Log-likelihood ratio test: {cph.log_likelihood_ratio_test()}")
+        print(f"Concordance Index: {cph.concordance_index_:.3f}")
+        
+        # Check proportional hazards assumption
+        print("\nProportional Hazards Test:")
+        try:
+            assumptions_test = cph.check_assumptions(df)
+            print(assumptions_test)
+        except Exception as e:
+            print("Could not perform proportional hazards test:")
+            print(str(e))
+    
+    return results
+
+# Example usage:
+# Read data
+# data = pd.read_csv('DATA.csv')
+
+# Univariate analysis
+# result1 = cox_analysis(data, time_var='fu_censor', event_var='dod', predictors=['age'])
+
+# Multivariate analysis
+# result2 = cox_analysis(data, time_var='fu_censor', event_var='dod', predictors=['age', 'sex', 'variant_histology', 'ypT_group'], print_full_summary=True)
+
+# Analysis for different outcome
+# result3 = cox_analysis(data, time_var='fu_recurrence', event_var='recurrence', predictors=['age', 'sex', 'variant_histology', 'ypT_group'])
 
 def plot_survival_curves(df, group, time, event):
     """
@@ -105,7 +243,9 @@ def plot_survival_curves(df, group, time, event):
         kmf.fit(data[time], event_observed=data[event])
         kmf.plot(label=group, ci_show=False)
     
-    plt.xlabel('Follow-up (months)')
+    plt.xlabel('Follow-up (Months)')
+    plt.ylabel('Survival Probability')
+    plt.ylim(0.0, 1.0)
     plt.legend()
     plt.show()
 

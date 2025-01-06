@@ -1,8 +1,11 @@
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 import pandas as pd
 import numpy as np
 
 # Load data
-df = pd.read_csv('NEO-UCA-DATA.csv')
+df = pd.read_csv('DATA.csv')
 
 """
 Data wrangling
@@ -60,3 +63,6 @@ df['dre'] = pd.Categorical(df['dre'], categories=['No','Yes'], ordered=True)
 # Replace follow-up values of days to months (ID-008)
 df['fu_recurrence'] = df['fu_recurrence'].replace(232, 232/30)
 df['fu_censor'] = df['fu_censor'].replace(721, 721/30)
+
+# Save the dataframe to a new CSV file
+df.to_csv('DATA.csv', index=False)
